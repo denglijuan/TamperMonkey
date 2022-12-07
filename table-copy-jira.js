@@ -2,31 +2,25 @@
 // @name:zh-CN   复制表格数据
 // @name         Table-Copy
 // @namespace    https://github.com/denglijuan/TamperMonkey
-// @version      1.1.0
+// @version      1.2.0
 // @description:zh-CN 选择表格每列数据合并并复制到粘贴板上
 // @description  Select the data in each column of the table to merge and copy to the pasteboard
 // @author       Denglijuan
 // @match        https://wiki.qianxin-inc.cn/*
-// @grant        none
+// @grant        GM_addStyle
+// @grant        GM_setClipboard
 // ==/UserScript==
 
 (function () {
   'use strict';
-
   let cols = []; // 选择复制列
 
   function init() {
-    if (document.querySelector('thead') !== null) {
+    if (document.querySelector('.table-wrap') !== null) {
       clearInterval(id);
 
       function copy(data) {
-        const textarea = document.createElement('textarea');
-        document.body.appendChild(textarea);
-        textarea.value = data;
-        textarea.setAttribute('style', 'display:node');
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
+        GM_setClipboard(data);
       }
 
       // 处理数据
@@ -47,11 +41,11 @@
 
       // 获取 tbody
       function handlerTbody(element) {
-        const tbody = element.parentElement.getElementsByTagName('tbody')[0];
+        const tbody = element.querySelector('tbody');
         const trs = tbody.childNodes;
         const trsLen = trs.length;
         const colsLen = cols.length;
-        const max = cols[colsLen - 1];
+        const max = Math.max(...cols);
         const data = new Array(trsLen)
           .fill(0)
           .map(() => new Array(max).fill(undefined));
@@ -84,28 +78,25 @@
       }
 
       // 弹窗
-      function addDilag(element) {
-        const result = window.prompt('示例：“1,2,3” 选择 1,2,3 列', '1,2,3');
-        const reg = /^(\d*,?)*$/;
+      function validatorCloumns(value) {
+        const reg = /^(\d*[,|，]?)*$/;
         cols = [];
 
-        if (result === null) {
+        if (value === '') {
           return;
         }
 
-        if (result === '' || !reg.test(result)) {
-          window.prompt('请输入合法的参数');
+        if (!reg.test(value)) {
+          window.alert('请输入合法的参数');
           return;
         }
 
-        result.split(',').forEach((item) => {
+        value.split(/,|，/).forEach((item) => {
           cols.push(Number(item));
         });
 
         cols = [...new Set(cols)]; // 去重
-        cols.sort(); // 从小到大排列
-
-        handlerTbody(element);
+        return true;
       }
 
       function addHandler(element, type, handler) {
@@ -118,23 +109,76 @@
         }
       }
 
-      // 给 table 标题添加双击事件
-      function addTheadEventListener() {
-        const theads = document.getElementsByTagName('thead');
-        if (theads.length === 0) {
-          return;
+      function handlerCopyIcon(event) {
+        const e = event ? event : window.event;
+        const target = event.target || event.srcElement;
+        let svg = target;
+
+        if (svg.nodeName === 'path') {
+          svg = svg.parentElement;
         }
 
-        const handler = function () {
-          addDilag(this);
-        };
+        const input = svg.previousElementSibling;
+        const table = svg.parentElement.nextElementSibling;
+        const result = validatorCloumns(input.value);
+        result && handlerTbody(table);
+      }
 
-        for (let i = 0; i < theads.length; i++) {
-          addHandler(theads[i], 'dblclick', handler);
+      // 给图标创建事件
+      function createIconEventListener() {
+        const copyIcon = document.querySelectorAll('.copy-icon');
+        for (let i = 0; i < copyIcon.length; i++) {
+          addHandler(copyIcon[i], 'click', handlerCopyIcon);
         }
       }
 
-      addTheadEventListener();
+      // 创建复制表格元素
+      function createCopyTableElement() {
+        const div = document.createElement('div');
+        const template = `<input type="text" value="1,2,3" class="table-wrap__input" />
+        <svg t="1670157694323" class="copy-icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2684" width="16" height="16"><path d="M672 832 224 832c-52.928 0-96-43.072-96-96L128 160c0-52.928 43.072-96 96-96l448 0c52.928 0 96 43.072 96 96l0 576C768 788.928 724.928 832 672 832zM224 128C206.368 128 192 142.368 192 160l0 576c0 17.664 14.368 32 32 32l448 0c17.664 0 32-14.336 32-32L704 160c0-17.632-14.336-32-32-32L224 128z" p-id="2685" fill="#cdcdcd"></path><path d="M800 960 320 960c-17.664 0-32-14.304-32-32s14.336-32 32-32l480 0c17.664 0 32-14.336 32-32L832 256c0-17.664 14.304-32 32-32s32 14.336 32 32l0 608C896 916.928 852.928 960 800 960z" p-id="2686" fill="#cdcdcd"></path><path d="M544 320 288 320c-17.664 0-32-14.336-32-32s14.336-32 32-32l256 0c17.696 0 32 14.336 32 32S561.696 320 544 320z" p-id="2687" fill="#cdcdcd"></path><path d="M608 480 288.032 480c-17.664 0-32-14.336-32-32s14.336-32 32-32L608 416c17.696 0 32 14.336 32 32S625.696 480 608 480z" p-id="2688" fill="#cdcdcd"></path><path d="M608 640 288 640c-17.664 0-32-14.304-32-32s14.336-32 32-32l320 0c17.696 0 32 14.304 32 32S625.696 640 608 640z" p-id="2689" fill="#cdcdcd"></path></svg>`;
+        div.classList.add('table-wrap__copy');
+        div.innerHTML = template;
+        return div;
+      }
+
+      function initElement() {
+        const tables = document.querySelectorAll('.table-wrap');
+        for (let i = 0; i < tables.length; i++) {
+          const divCopy = createCopyTableElement();
+          tables[i].parentElement.insertBefore(divCopy, tables[i]);
+        }
+      }
+
+      // 加载样式
+      function loadStyle() {
+        const css = `
+              .table-wrap__copy{
+                float: right;
+                margin-top: -24px;
+                padding: 5px;
+                border-radius: 4px;
+                background-color: white;
+              }
+              .table-wrap__input{
+                width: 80px;
+                height: 20px;
+                padding: 0 8px;
+                border-radius: 3px;
+                border: 1px solid #ccc;
+                color: #333;
+              }
+              .copy-icon{
+                vertical-align: middle;
+                cursor: pointer;
+              }
+            `;
+        GM_addStyle(css);
+      }
+
+      loadStyle();
+      initElement();
+      createIconEventListener();
     }
   }
 
